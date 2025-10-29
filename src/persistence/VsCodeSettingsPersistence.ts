@@ -20,13 +20,53 @@ export class VsCodeSettingsPersistence implements IConfigPersistence {
 
   async getConfig(): Promise<Contracts.config.ConfigSnapshot> {
     const cfg = vscode.workspace.getConfiguration('andl.ai');
-    // Minimal seed respecting schema shape
-    const providers: Contracts.config.ProviderConfig[] = cfg.get('providers') ?? [];
-    const memory: Contracts.config.MemoryConfig = cfg.get('memory') ?? {};
-    const toolkit: Contracts.config.ToolkitConfig = cfg.get('toolkit') ?? {};
-    const models: Contracts.config.ModelSelectionConfig = cfg.get('models') ?? {};
-    const resilience: Contracts.config.ResilienceConfig = cfg.get('resilience') ?? {};
+
+    // Respect workspace-over-user precedence explicitly using inspect()
+    const pick = <T>(key: string, fallback: T): T => {
+      const inspected = cfg.inspect<T>(key as any) as any;
+      if (inspected && typeof inspected === 'object') {
+        return (inspected.workspaceValue ?? inspected.globalValue ?? inspected.defaultValue ?? fallback) as T;
+      }
+      return (cfg.get(key) as T) ?? fallback;
+    };
+
+    // Providers: augment with secret presence via apiKeySecret reference (no raw key exposure)
+    const providersRaw = pick<any[]>('providers', []) ?? [];
+    const providers: Contracts.config.ProviderConfig[] = [];
+    for (const p of providersRaw) {
+      if (!p || typeof p !== 'object') continue;
+      const id = String(p.id ?? '').trim();
+      const name = String(p.name ?? '').trim();
+      if (!id || !name) continue;
+      const secretRef = await this.getProviderSecretRef(id);
+      const entry: Contracts.config.ProviderConfig = {
+        id,
+        name,
+        ...(secretRef ? { apiKeySecret: secretRef } : {})
+      };
+      providers.push(entry);
+    }
+
+    // Other sections with safe defaults
+    const memory: Contracts.config.MemoryConfig = pick('memory', {}) ?? {};
+    const toolkit: Contracts.config.ToolkitConfig = pick('toolkit', {}) ?? {};
+    const models: Contracts.config.ModelSelectionConfig = pick('models', {}) ?? {};
+    const resilience: Contracts.config.ResilienceConfig = pick('resilience', {}) ?? {};
+
     return { providers, memory, toolkit, models, resilience };
+  }
+
+  /** Derive the SecretStorage reference name and return it when a secret exists. */
+  private async getProviderSecretRef(providerId: string): Promise<string | undefined> {
+    // Convention: andl-ai-<provider-id>-key
+    const secretName = `andl-ai-${providerId}-key`;
+    try {
+      const val = await this.context.secrets.get(secretName);
+      if (val && val.length > 0) return secretName; // expose reference only
+    } catch {
+      // Ignore secret access errors; treat as missing
+    }
+    return undefined;
   }
 
   async updateConfig(deltas: Contracts.config.ConfigDelta[]): Promise<Contracts.config.ConfigValidationResult> {
