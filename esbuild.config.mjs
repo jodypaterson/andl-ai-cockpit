@@ -5,6 +5,7 @@ import path from 'node:path';
 const outdir = path.resolve('./dist');
 
 async function build() {
+  // Extension host bundle
   await esbuild.build({
     entryPoints: ['src/extension.ts'],
     bundle: true,
@@ -14,6 +15,20 @@ async function build() {
     external: ['vscode'],
     sourcemap: false,
     target: ['node18'],
+    logLevel: 'info'
+  });
+
+  // Webview bundle
+  const webviewEntry = path.resolve('webview/src/index.tsx');
+  await esbuild.build({
+    entryPoints: [webviewEntry],
+    bundle: true,
+    platform: 'browser',
+    format: 'iife',
+    outfile: path.join(outdir, 'webview.js'),
+    jsx: 'automatic',
+    sourcemap: false,
+    target: ['es2022'],
     logLevel: 'info'
   });
 
