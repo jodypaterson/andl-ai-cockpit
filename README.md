@@ -8,4 +8,3 @@ This repository will host the VS Code extension for the ANDL AI Cockpit.
 ## Getting started
 
 - Add your extension scaffolding (package.json, src/extension.ts, build config) or ask Copilot to scaffold a minimal VS Code extension here.
-
