@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://andl.ai/schemas/config/v1.0.0",
+  "version": "1.0.0",
+  "title": "ANDL AI Client Configuration",
+  "type": "object",
+  "properties": {
+    "providers": {
+      "type": "array",
+      "title": "AI Providers",
+      "description": "List of AI providers and credentials.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Provider ID",
+            "description": "Stable provider identifier (kebab-case).",
+            "ui:placeholder": "openai",
+            "ui:help": "Use a stable id like 'openai' or 'anthropic'."
+          },
+          "name": {
+            "type": "string",
+            "title": "Display Name",
+            "description": "Human-friendly provider name.",
+            "ui:placeholder": "OpenAI"
+          },
+          "apiKeySecret": {
+            "type": "string",
+            "title": "API Key Secret",
+            "description": "Reference to a stored secret containing the API key.",
+            "ui:widget": "password",
+            "ui:help": "Use a secret reference, not the raw API key."
+          }
+        },
+        "required": ["id", "name"],
+        "additionalProperties": false
+      }
+    },
+    "memory": {
+      "type": "object",
+      "title": "Memory Settings",
+      "properties": {
+        "stm": {
+          "type": "object",
+          "title": "Short-Term Memory",
+          "properties": {
+            "capacity": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "STM Capacity",
+              "description": "Max number of recent items to retain.",
+              "ui:widget": "updown",
+              "ui:help": "Typical range: 10-200"
+            }
+          },
+          "additionalProperties": false
+        },
+        "ltm": {
+          "type": "object",
+          "title": "Long-Term Memory",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "title": "Enable LTM"
+            },
+            "vectorStore": {
+              "type": "string",
+              "title": "Vector Store Name",
+              "ui:placeholder": "default"
+            }
+          },
+          "additionalProperties": false
+        },
+        "rag": {
+          "type": "object",
+          "title": "RAG (Retrieval-Augmented Generation)",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "title": "Enable RAG"
+            },
+            "indexName": {
+              "type": "string",
+              "title": "Index Name",
+              "ui:placeholder": "project-index"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "toolkit": {
+      "type": "object",
+      "title": "Toolkit",
+      "description": "Toolkit configuration (reserved for future ATs).",
+      "additionalProperties": true
+    },
+    "models": {
+      "type": "object",
+      "title": "Model Selection",
+      "properties": {
+        "defaultModel": {
+          "type": "string",
+          "title": "Default Model",
+          "ui:placeholder": "gpt-4o-mini"
+        },
+        "overrides": {
+          "type": "object",
+          "title": "Overrides by Capability",
+          "additionalProperties": {
+            "type": "string",
+            "title": "Model"
+          },
+          "ui:help": "Map capability keys to model ids (e.g., summarize -> gpt-4o-mini)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "resilience": {
+      "type": "object",
+      "title": "Resilience",
+      "properties": {
+        "retries": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2,
+          "title": "Retry Attempts",
+          "ui:widget": "updown"
+        },
+        "backoffMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 250,
+          "title": "Backoff (ms)",
+          "ui:widget": "updown"
+        },
+        "circuitBreaker": {
+          "type": "object",
+          "title": "Circuit Breaker",
+          "properties": {
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 5,
+              "title": "Failure Threshold"
+            },
+            "resetTimeoutMs": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10000,
+              "title": "Reset Timeout (ms)"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,44 @@
+{
+  "name": "andl-ai-cockpit",
+  "displayName": "ANDL AI Cockpit",
+  "publisher": "jodypaterson",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Unified AI Configuration Hub for ANDL (VS Code Extension)",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./dist/extension.js",
+  "type": "module",
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:andl.ai.cockpit.open"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "andl.ai.cockpit.open",
+        "title": "ANDL: Open AI Configuration"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc && node esbuild.config.mjs",
+    "watch": "tsc --watch",
+    "package": "pnpm run compile && vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "packageManager": "pnpm@10.15.0+sha512.486ebc259d3e999a4e8691ce03b5cac4a71cbeca39372a9b762cb500cfdf0873e2cb16abe3d951b1ee2cf012503f027b98b6584e4df22524e0c7450d9ec7aa7b"
+}
