@@ -1,0 +1,49 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Node / JS
+node_modules/
+.npm/
+.pnpm-store/
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+npm-debug.log*
+*.log
+
+# Build outputs
+/dist/
+/build/
+/coverage/
+/.cache/
+/.parcel-cache/
+/tmp/
+/temp/
+/.tmp/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Env and secrets
+.env
+.env.*
+*.local
+
+# OS/Archive cruft
+Thumbs.db
+Desktop.ini
+
+# Governance backups and temp artifacts
+**/*.backup-*
+**/*.bak
+**/~$*
+**/*.swp
+**/*.swo
+
+# Misc
+*.DS_Store
