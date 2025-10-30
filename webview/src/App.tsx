@@ -1,110 +1,129 @@
 import React, { useEffect, useState } from 'react';
-import Form from '@rjsf/core';
-import validator from '@rjsf/validator-ajv8';
-import { ProviderSetupWizard } from './ProviderSetupWizard';
-import { ToolkitRegistrationWizard } from './ToolkitRegistrationWizard';
-import { MemoryEditor } from './MemoryEditor';
+// Consume extracted UI library (internal import)
+import { GlobalToolbar, ProvidersGroup, GroupCard, Toggle, NumberField, useConfigStore, configStore, hostBridge } from '../../src/ui/index.js';
 
 declare global {
   interface Window { vscode?: { postMessage: (msg: any) => void }; }
 }
 
 export default function App() {
-  const [schema, setSchema] = useState<Record<string, any> | null>(null);
-  const [formData, setFormData] = useState<any>({});
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [toolkitWizardOpen, setToolkitWizardOpen] = useState(false);
-  const [memoryEditorOpen, setMemoryEditorOpen] = useState(false);
+  // Start host bridge for hydration/messages
+  useEffect(() => { hostBridge.start(); }, []);
 
-  useEffect(() => {
-    const handler = (event: MessageEvent) => {
-      const msg = event.data;
-      if (msg?.type === 'config:hydrate') {
-        setSchema(msg.schema);
-        setFormData(msg.config);
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
+  const state = useConfigStore();
+  const working = (state?.working || {}) as any;
+  const original = (state?.original || {}) as any;
+  const [newToolId, setNewToolId] = useState('');
+  const [newToolName, setNewToolName] = useState('');
 
-  if (!schema) return <div style={{ padding: 12 }}>Loading configuration…</div>;
+  // Derive Providers props
+  const execMode: string = String(working?.providers?.executionMode || original?.providers?.executionMode || 'stub');
+  const appliedExecMode: string = String(original?.providers?.executionMode || 'stub');
+  const onExecModeChange = (mode: string) => {
+    // Optimistically update local working state
+    configStore.update(['providers', 'executionMode'], mode);
+  };
+  const onApplyExecMode = (mode: string) => {
+    // Persist via host message while keeping local state in sync
+    configStore.update(['providers', 'executionMode'], mode);
+    hostBridge.postMessage({ type: 'ai:executionMode:set', value: mode });
+  };
+
+  const models = (Array.isArray(working?.providers?.modelsAll) ? working.providers.modelsAll : (Array.isArray(working?.providers?.models) ? working.providers.models : [])) as any[];
+  const modelsLoading = !!working?.providers?.modelsLoading;
+  const providerStatuses = (working?.providers?.statuses || {}) as Record<string, any>;
+  const providerCreds = (working?.providers?.credentials || { __loaded: false }) as any;
+  const groupDirty = state?.dirtyGroups?.has?.('providers') || false;
+
+  const onReload = () => hostBridge.postMessage({ type: 'ai:config:current:request', reason: 'toolbar:reload' });
+
+  const hasHydrated = !!state?.working;
+  if (!hasHydrated) return <div style={{ padding: 12 }}>Loading configuration…</div>;
 
   return (
     <div style={{ padding: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <h2 style={{ margin: 0 }}>AI Configuration</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button data-testid="add-provider" onClick={() => setWizardOpen(true)}>Add Provider</button>
-          <button data-testid="register-tools" onClick={() => setToolkitWizardOpen(true)}>Register Tools</button>
-          <button data-testid="edit-memory" onClick={() => setMemoryEditorOpen(true)}>Edit Memory Settings</button>
-        </div>
-      </div>
-      <Form
-        schema={schema}
-        formData={formData}
-        validator={validator}
-        onChange={(e) => setFormData(e.formData)}
-        onSubmit={(e) => {
-          window.vscode?.postMessage({ type: 'config:apply', config: e.formData });
-        }}
+      <GlobalToolbar onReload={onReload} />
+      <ProvidersGroup
+        executionMode={execMode}
+        appliedExecutionMode={appliedExecMode}
+        onExecutionModeChange={onExecModeChange}
+        onApplyExecutionMode={onApplyExecMode}
+        models={models}
+        modelsLoading={modelsLoading}
+        providerStatuses={providerStatuses}
+        providerCreds={providerCreds}
+        groupDirty={groupDirty}
       />
-      {wizardOpen && (
-        <ProviderSetupWizard
-          onClose={() => setWizardOpen(false)}
-          onAdded={(p: { id: string; name: string }) => {
-            // Optimistically reflect locally; host will also rehydrate.
-            const next = { ...(formData || {}) };
-            const cur = Array.isArray(next.providers) ? next.providers.slice() : [];
-            const secret = `andl-ai-${p.id}-key`;
-            const entry = { id: p.id, name: p.name, apiKeySecret: secret };
-            next.providers = [...cur.filter((x: any) => x?.id !== p.id), entry];
-            setFormData(next);
-            setWizardOpen(false);
-          }}
-        />
-      )}
-      {toolkitWizardOpen && (
-        <ToolkitRegistrationWizard
-          providers={Array.isArray(formData?.providers) ? formData.providers : []}
-          existingIds={Array.isArray(formData?.toolkit?.registeredTools)
-            ? formData.toolkit.registeredTools.map((t: any) => t?.id).filter(Boolean)
-            : []}
-          onClose={() => setToolkitWizardOpen(false)}
-          onRegistered={(tools: any[]) => {
-            // Optimistically reflect locally; host will also rehydrate
-            const next = { ...(formData || {}) };
-            const tk = { ...(next.toolkit || {}) } as any;
-            const cur = Array.isArray(tk.registeredTools) ? tk.registeredTools.slice() : [];
-            const ids = new Set(cur.map((t: any) => t?.id));
-            for (const t of tools) {
-              if (!t?.id) continue;
-              // replace by id if exists, else add
-              const idx = cur.findIndex((x: any) => x?.id === t.id);
-              if (idx >= 0) cur[idx] = t; else cur.push(t);
-              ids.add(t.id);
-            }
-            tk.registeredTools = cur;
-            next.toolkit = tk;
-            setFormData(next);
-            setToolkitWizardOpen(false);
-          }}
-        />
-      )}
-      {memoryEditorOpen && (
-        <MemoryEditor
-          schema={schema}
-          rootConfig={formData}
-          onClose={() => setMemoryEditorOpen(false)}
-          onSaved={(updatedMemory: any) => {
-            // Optimistically update local state; host will rehydrate
-            const next = { ...(formData || {}) };
-            next.memory = updatedMemory;
-            setFormData(next);
-            setMemoryEditorOpen(false);
-          }}
-        />
-      )}
+
+      {/* Toolkit minimal editor */}
+      <GroupCard title="Toolkit" description="Register simple tools for testing. Use ai-client for full capabilities.">
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <input
+            placeholder="tool id (e.g., gemini:status)"
+            value={newToolId}
+            onChange={(e) => setNewToolId(e.target.value)}
+            style={{ flex: 2 }}
+            data-testid="tool-id-input"
+          />
+          <input
+            placeholder="tool name"
+            value={newToolName}
+            onChange={(e) => setNewToolName(e.target.value)}
+            style={{ flex: 3 }}
+            data-testid="tool-name-input"
+          />
+          <button
+            onClick={() => {
+              const id = newToolId.trim(); const name = newToolName.trim() || newToolId.trim();
+              if (!id) return;
+              // Optimistic local update
+              const st = configStore.getState();
+              const base = { ...(st.working || {}) } as any;
+              const tk = { ...(base.toolkit || {}) } as any;
+              const cur = Array.isArray(tk.registeredTools) ? tk.registeredTools.slice() : [];
+              const idx = cur.findIndex((x: any) => x?.id === id);
+              const tool = { id, name } as any;
+              if (idx >= 0) cur[idx] = tool; else cur.push(tool);
+              tk.registeredTools = cur;
+              configStore.update(['toolkit'], tk);
+              // Persist via host
+              hostBridge.postMessage({ type: 'toolkit:register', tools: [tool] });
+              setNewToolId(''); setNewToolName('');
+            }}
+            data-testid="register-tool"
+          >Register</button>
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.8 }}>
+          Registered tools: {Array.isArray((working as any)?.toolkit?.registeredTools) ? (working as any).toolkit.registeredTools.length : 0}
+        </div>
+      </GroupCard>
+
+      {/* Memory minimal editor */}
+      <GroupCard title="Memory" description="Basic memory settings (demo).">
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 8 }}>
+          <NumberField
+            path="memory.stm.maxItems"
+            label="STM max items"
+            value={Number(((working as any)?.memory?.stm?.maxItems ?? 50))}
+            min={1}
+            max={500}
+            step={1}
+            onChange={(v: number) => configStore.update(['memory', 'stm', 'maxItems'], v)}
+          />
+          <Toggle
+            label="Session memory enabled"
+            checked={!!((working as any)?.memory?.session?.enabled)}
+            onChange={(checked: boolean) => configStore.update(['memory', 'session', 'enabled'], checked)}
+          />
+          <button
+            onClick={() => {
+              const patch = configStore.applyAll();
+              if (patch) { hostBridge.saveAll(patch as any); }
+            }}
+            data-testid="memory-save-all"
+          >Save All</button>
+        </div>
+      </GroupCard>
     </div>
   );
 }
