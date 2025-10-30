@@ -33,6 +33,90 @@ export class WebviewManager {
     this.panel!.webview.onDidReceiveMessage(async (msg) => {
       const webview = this.panel!.webview;
       try {
+        // Debug verbosity toggle (no-op placeholder)
+        if (msg?.type === 'debug:verbose:set') {
+          // Intentionally no-op; UI controls its own verbosity. Kept for protocol compatibility.
+        }
+        // Provider credential updates from ProvidersGroup modal
+        if (msg?.type === 'ai:providerCreds:update') {
+          const creds = (msg && typeof msg === 'object') ? (msg.creds || {}) : {};
+          try {
+            for (const [key, value] of Object.entries(creds)) {
+              if (!value) continue;
+              const k = String(key);
+              if (k.endsWith('-base-url')) {
+                // Persist optional base URL under providers.baseUrls.<provider>
+                const baseProvider = k.replace(/-base-url$/, '');
+                const cfg = vscode.workspace.getConfiguration('andl.ai');
+                const prev = (cfg.get<any>('providers') ?? {});
+                const baseUrls = { ...(prev.baseUrls || {}) };
+                baseUrls[baseProvider] = String(value);
+                await cfg.update('providers', { ...prev, baseUrls }, vscode.ConfigurationTarget.Global);
+              } else {
+                // Treat as API key secret
+                const providerId = k;
+                const secretName = `andl-ai-${providerId}-key`;
+                await this.context.secrets.store(secretName, String(value));
+                const cfg = vscode.workspace.getConfiguration('andl.ai');
+                const prev = (cfg.get<any>('providers') ?? {});
+                const credentials = { ...(prev.credentials || {}) };
+                credentials[providerId] = secretName;
+                await cfg.update('providers', { ...prev, credentials }, vscode.ConfigurationTarget.Global);
+              }
+            }
+          } catch (e) {
+            console.warn('[ANDL][providerCreds:update] Failed to persist creds', e);
+          }
+          // Rehydrate after updates
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
+        }
+        if (msg?.type === 'ai:models:list') {
+          // Trigger rehydrate; model enumeration is handled elsewhere or mocked for now
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
+        }
+        if (msg?.type === 'ai:models:refresh:provider') {
+          // Clear explicit visibility filters to "unhide all" models for provider
+          try {
+            const provId = String(msg.providerId || '').trim();
+            const cfg = vscode.workspace.getConfiguration('andl.ai');
+            const providers = (cfg.get<any>('providers') ?? {});
+            // If a visible models list exists, drop provider-specific filters by clearing the list
+            if (Array.isArray(providers.models)) {
+              await cfg.update('providers', { ...providers, models: [] }, vscode.ConfigurationTarget.Global);
+            }
+          } catch (e) {
+            console.warn('[ANDL][models:refresh:provider] Failed to refresh provider', e);
+          }
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
+        }
+        if (msg?.type === 'ai:models:exclude') {
+          try {
+            const modelId = String(msg.modelId || '').trim();
+            if (modelId) {
+              const cfg = vscode.workspace.getConfiguration('andl.ai');
+              const providers = (cfg.get<any>('providers') ?? {});
+              const current: string[] = Array.isArray(providers.models) ? providers.models.slice() : [];
+              const next = current.includes(modelId) ? current : [...current, modelId].filter((m) => m !== modelId);
+              const filtered = next.filter((m) => m !== modelId);
+              await cfg.update('providers', { ...providers, models: filtered }, vscode.ConfigurationTarget.Global);
+            }
+          } catch (e) {
+            console.warn('[ANDL][models:exclude] Failed to exclude model', e);
+          }
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
+        }
         if (msg?.type === 'provider:test') {
           const { providerId, apiKey } = msg;
           // For AT-05: mock validation (non-empty key). Real HTTP checks deferred to AT-06.
