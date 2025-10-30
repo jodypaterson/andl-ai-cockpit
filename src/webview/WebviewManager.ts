@@ -28,6 +28,45 @@ export class WebviewManager {
     const schema = await persistence.getSchema();
     const config = await persistence.getConfig();
     this.panel!.webview.postMessage({ type: 'config:hydrate', schema, config });
+
+    // Wire message handlers once per panel creation
+    this.panel!.webview.onDidReceiveMessage(async (msg) => {
+      const webview = this.panel!.webview;
+      try {
+        if (msg?.type === 'provider:test') {
+          const { providerId, apiKey } = msg;
+          // For AT-05: mock validation (non-empty key). Real HTTP checks deferred to AT-06.
+          const ok = typeof apiKey === 'string' && apiKey.trim().length > 0 && typeof providerId === 'string' && providerId.trim().length > 0;
+          webview.postMessage({ type: 'provider:test:result', ok, error: ok ? undefined : 'API key required.' });
+        }
+        if (msg?.type === 'provider:add') {
+          const { providerId, providerName, apiKey } = msg;
+          if (!providerId || !providerName || !apiKey) {
+            webview.postMessage({ type: 'provider:add:error', error: 'Missing provider id/name or API key.' });
+            return;
+          }
+          const secretName = `andl-ai-${providerId}-key`;
+          await this.context.secrets.store(secretName, String(apiKey));
+          // Update providers list in settings
+          const cfg = vscode.workspace.getConfiguration('andl.ai');
+          const existing = (cfg.get<any[]>('providers') ?? []).filter(Boolean);
+          const updated = [...existing.filter(p => p?.id !== providerId), { id: providerId, name: providerName }];
+          await cfg.update('providers', updated, vscode.ConfigurationTarget.Global);
+          // Rehydrate after successful save
+          const persistence = new VsCodeSettingsPersistence(this.context);
+          const schema = await persistence.getSchema();
+          const config = await persistence.getConfig();
+          webview.postMessage({ type: 'provider:add:success', providerId, apiKeySecret: secretName });
+          webview.postMessage({ type: 'config:hydrate', schema, config });
+        }
+        if (msg?.type === 'config:apply') {
+          // Optional: persist whole config (not primary for AT-05)
+          // Kept no-op to avoid altering broader behavior in this AT.
+        }
+      } catch (err: any) {
+        webview.postMessage({ type: 'error', error: String(err?.message ?? err ?? 'Unknown error') });
+      }
+    });
   }
 
   private async renderHtml(webview: vscode.Webview): Promise<string> {
