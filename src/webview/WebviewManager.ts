@@ -59,6 +59,28 @@ export class WebviewManager {
           webview.postMessage({ type: 'provider:add:success', providerId, apiKeySecret: secretName });
           webview.postMessage({ type: 'config:hydrate', schema, config });
         }
+        // Unified apply handlers from extracted UI library and legacy flows
+        if (msg?.type === 'config:apply:hybrid' || msg?.type === 'settings:apply:v2') {
+          const payload = (msg && typeof msg === 'object') ? (msg.payload ?? msg.config ?? undefined) : undefined;
+          if (payload && typeof payload === 'object') {
+            const cfg = vscode.workspace.getConfiguration('andl.ai');
+            // Persist each top-level key found in payload
+            // e.g., { memory: {...}, providers: {...}, toolkit: {...}, prompt: {...} }
+            for (const [key, value] of Object.entries(payload)) {
+              try {
+                await cfg.update(key, value, vscode.ConfigurationTarget.Global);
+              } catch (e) {
+                // Non-fatal per-key; surface in console and continue
+                console.warn(`[ANDL][settings-apply] Failed to update andl.ai.${key}:`, e);
+              }
+            }
+          }
+          // Rehydrate after apply
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
+        }
         if (msg?.type === 'config:apply') {
           // Persist memory section if present (AT-07 scope)
           const cfg = vscode.workspace.getConfiguration('andl.ai');
@@ -67,6 +89,20 @@ export class WebviewManager {
             await cfg.update('memory', next.memory, vscode.ConfigurationTarget.Global);
           }
           // Rehydrate after apply
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
+        }
+        // Execution mode immediate apply notifications (support both :set and :change)
+        if (msg?.type === 'ai:executionMode:set' || msg?.type === 'ai:executionMode:change') {
+          const mode = String(msg.value ?? msg.mode ?? '').trim();
+          if (mode) {
+            const cfg = vscode.workspace.getConfiguration('andl.ai');
+            const providers = cfg.get<any>('providers') ?? {};
+            await cfg.update('providers', { ...providers, executionMode: mode }, vscode.ConfigurationTarget.Global);
+          }
+          // Rehydrate so UI reflects applied execution mode
           const persistence2 = new VsCodeSettingsPersistence(this.context);
           const schema2 = await persistence2.getSchema();
           const config2 = await persistence2.getConfig();
@@ -121,6 +157,13 @@ export class WebviewManager {
           webview.postMessage({ type: 'toolkit:register:success', tools: registered });
           webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
         }
+        // Current state request (toolbar reload and host handshake path)
+        if (msg?.type === 'ai:config:current:request') {
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
+        }
       } catch (err: any) {
         webview.postMessage({ type: 'error', error: String(err?.message ?? err ?? 'Unknown error') });
       }
@@ -133,7 +176,7 @@ export class WebviewManager {
     const csp = [
       `default-src 'none'`,
       `img-src ${webview.cspSource} https: data:`,
-      `style-src ${webview.cspSource} 'nonce-${nonce}'`,
+      `style-src ${webview.cspSource} 'nonce-${nonce}' 'unsafe-inline'`,
       `script-src 'nonce-${nonce}'`
     ].join('; ');
     return `<!DOCTYPE html>
