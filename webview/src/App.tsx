@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { ProviderSetupWizard } from './ProviderSetupWizard';
+import { ToolkitRegistrationWizard } from './ToolkitRegistrationWizard';
 
 declare global {
   interface Window { vscode?: { postMessage: (msg: any) => void }; }
@@ -11,6 +12,7 @@ export default function App() {
   const [schema, setSchema] = useState<Record<string, any> | null>(null);
   const [formData, setFormData] = useState<any>({});
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [toolkitWizardOpen, setToolkitWizardOpen] = useState(false);
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -30,7 +32,10 @@ export default function App() {
     <div style={{ padding: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <h2 style={{ margin: 0 }}>AI Configuration</h2>
-        <button onClick={() => setWizardOpen(true)}>Add Provider</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button data-testid="add-provider" onClick={() => setWizardOpen(true)}>Add Provider</button>
+          <button data-testid="register-tools" onClick={() => setToolkitWizardOpen(true)}>Register Tools</button>
+        </div>
       </div>
       <Form
         schema={schema}
@@ -53,6 +58,33 @@ export default function App() {
             next.providers = [...cur.filter((x: any) => x?.id !== p.id), entry];
             setFormData(next);
             setWizardOpen(false);
+          }}
+        />
+      )}
+      {toolkitWizardOpen && (
+        <ToolkitRegistrationWizard
+          providers={Array.isArray(formData?.providers) ? formData.providers : []}
+          existingIds={Array.isArray(formData?.toolkit?.registeredTools)
+            ? formData.toolkit.registeredTools.map((t: any) => t?.id).filter(Boolean)
+            : []}
+          onClose={() => setToolkitWizardOpen(false)}
+          onRegistered={(tools: any[]) => {
+            // Optimistically reflect locally; host will also rehydrate
+            const next = { ...(formData || {}) };
+            const tk = { ...(next.toolkit || {}) } as any;
+            const cur = Array.isArray(tk.registeredTools) ? tk.registeredTools.slice() : [];
+            const ids = new Set(cur.map((t: any) => t?.id));
+            for (const t of tools) {
+              if (!t?.id) continue;
+              // replace by id if exists, else add
+              const idx = cur.findIndex((x: any) => x?.id === t.id);
+              if (idx >= 0) cur[idx] = t; else cur.push(t);
+              ids.add(t.id);
+            }
+            tk.registeredTools = cur;
+            next.toolkit = tk;
+            setFormData(next);
+            setToolkitWizardOpen(false);
           }}
         />
       )}
