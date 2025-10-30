@@ -60,8 +60,17 @@ export class WebviewManager {
           webview.postMessage({ type: 'config:hydrate', schema, config });
         }
         if (msg?.type === 'config:apply') {
-          // Optional: persist whole config (not primary for AT-05)
-          // Kept no-op to avoid altering broader behavior in this AT.
+          // Persist memory section if present (AT-07 scope)
+          const cfg = vscode.workspace.getConfiguration('andl.ai');
+          const next = (msg && typeof msg === 'object') ? msg.config : undefined;
+          if (next && typeof next === 'object' && next.memory) {
+            await cfg.update('memory', next.memory, vscode.ConfigurationTarget.Global);
+          }
+          // Rehydrate after apply
+          const persistence2 = new VsCodeSettingsPersistence(this.context);
+          const schema2 = await persistence2.getSchema();
+          const config2 = await persistence2.getConfig();
+          webview.postMessage({ type: 'config:hydrate', schema: schema2, config: config2 });
         }
         if (msg?.type === 'toolkit:enumerate') {
           const providerIds: string[] = Array.isArray(msg.providerIds) ? msg.providerIds : [];

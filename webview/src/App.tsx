@@ -3,6 +3,7 @@ import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { ProviderSetupWizard } from './ProviderSetupWizard';
 import { ToolkitRegistrationWizard } from './ToolkitRegistrationWizard';
+import { MemoryEditor } from './MemoryEditor';
 
 declare global {
   interface Window { vscode?: { postMessage: (msg: any) => void }; }
@@ -13,6 +14,7 @@ export default function App() {
   const [formData, setFormData] = useState<any>({});
   const [wizardOpen, setWizardOpen] = useState(false);
   const [toolkitWizardOpen, setToolkitWizardOpen] = useState(false);
+  const [memoryEditorOpen, setMemoryEditorOpen] = useState(false);
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -35,6 +37,7 @@ export default function App() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button data-testid="add-provider" onClick={() => setWizardOpen(true)}>Add Provider</button>
           <button data-testid="register-tools" onClick={() => setToolkitWizardOpen(true)}>Register Tools</button>
+          <button data-testid="edit-memory" onClick={() => setMemoryEditorOpen(true)}>Edit Memory Settings</button>
         </div>
       </div>
       <Form
@@ -85,6 +88,20 @@ export default function App() {
             next.toolkit = tk;
             setFormData(next);
             setToolkitWizardOpen(false);
+          }}
+        />
+      )}
+      {memoryEditorOpen && (
+        <MemoryEditor
+          schema={schema}
+          rootConfig={formData}
+          onClose={() => setMemoryEditorOpen(false)}
+          onSaved={(updatedMemory: any) => {
+            // Optimistically update local state; host will rehydrate
+            const next = { ...(formData || {}) };
+            next.memory = updatedMemory;
+            setFormData(next);
+            setMemoryEditorOpen(false);
           }}
         />
       )}
