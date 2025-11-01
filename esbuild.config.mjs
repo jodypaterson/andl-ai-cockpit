@@ -1,10 +1,40 @@
 import esbuild from 'esbuild';
 import { promises as fs } from 'node:fs';
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 
 const outdir = path.resolve('./dist');
 
 async function build() {
+  // UI library bundle (ESM) - externalize react/react-dom
+  try {
+    await esbuild.build({
+      entryPoints: ['src/ui/index.ts'],
+      bundle: true,
+      platform: 'browser',
+      format: 'esm',
+      outfile: path.join(outdir, 'ui/index.js'),
+      jsx: 'automatic',
+      sourcemap: false,
+      target: ['es2022'],
+      logLevel: 'info',
+      external: ['react', 'react-dom', 'react/jsx-runtime']
+    });
+    // Generate type declarations for UI
+    try {
+      execSync('npx tsc --emitDeclarationOnly --declaration --outDir dist/ui --target ES2022 --jsx react-jsx --module NodeNext --moduleResolution NodeNext src/ui/index.ts', { stdio: 'inherit' });
+    } catch (e) {
+      console.warn('[tsc] Declaration emit failed for UI library:', e?.message || e);
+    }
+  } catch (e) {
+    // If src/ui doesn't exist yet, skip silently (first runs)
+    if (e && e.message && String(e.message).includes('Could not resolve "src/ui/index.ts"')) {
+      console.warn('[build] UI library entry not found; skipping UI bundle.');
+    } else {
+      throw e;
+    }
+  }
+
   // Extension host bundle
   await esbuild.build({
     entryPoints: ['src/extension.ts'],
